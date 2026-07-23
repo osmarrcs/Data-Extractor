@@ -86,6 +86,30 @@ router.patch("/scans/:id/pause", async (req, res): Promise<void> => {
   res.json(serializeScan(updated));
 });
 
+// ─── PATCH /scans/:id/cancel ─────────────────────────────────────────────────
+router.patch("/scans/:id/cancel", async (req, res): Promise<void> => {
+  const params = GetScanParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
+  const [scan] = await db.select().from(scansTable).where(eq(scansTable.id, params.data.id));
+  if (!scan) {
+    res.status(404).json({ error: "Varredura não encontrada" });
+    return;
+  }
+  if (scan.status !== "em_andamento" && scan.status !== "pausado") {
+    res.status(400).json({ error: "Apenas varreduras em andamento ou pausadas podem ser canceladas" });
+    return;
+  }
+  const [updated] = await db
+    .update(scansTable)
+    .set({ paused: true, status: "falhou", completedAt: new Date() })
+    .where(eq(scansTable.id, params.data.id))
+    .returning();
+  res.json(serializeScan(updated));
+});
+
 // ─── PATCH /scans/:id/resume ──────────────────────────────────────────────────
 router.patch("/scans/:id/resume", async (req, res): Promise<void> => {
   const params = GetScanParams.safeParse(req.params);

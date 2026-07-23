@@ -267,7 +267,7 @@ export async function searchMicrosoftPatchTuesday(tech: string): Promise<CveResu
   return results;
 }
 
-// ─── Relatório HTML estilo Tenable (todo em português) ───────────────────────
+// ─── Relatório HTML estilo Tenable One (segue template original do usuário) ──
 export function generateTenableReport(vuln: {
   cveId: string;
   tech: string;
@@ -277,100 +277,99 @@ export function generateTenableReport(vuln: {
   cvss: string;
 }): string {
   const cvssFloat = parseFloat(vuln.cvss);
-  let severidade = "Informativo";
-  let corSeveridade = "#2196f3";
-  let sugestao = "Monitorar e planejar atualização";
+  let corCvss = "#e53935";
+  let sugestao = "Monitorar e Planejar Atualização";
 
-  if (vuln.cvss === "N/D (Exploração Ativa)" || cvssFloat >= 9.0) {
-    severidade = "Crítico";
-    corSeveridade = "#e53935";
-    sugestao = "Ação emergencial recomendada — mitigar imediatamente";
-  } else if (cvssFloat >= 7.0) {
-    severidade = "Alto";
-    corSeveridade = "#f4511e";
-    sugestao = "Aplicar correção na próxima janela de manutenção";
-  } else if (cvssFloat >= 4.0) {
-    severidade = "Médio";
-    corSeveridade = "#f9a825";
-    sugestao = "Planejar atualização no próximo ciclo";
+  if (!isNaN(cvssFloat)) {
+    if (cvssFloat >= 9.0) { sugestao = "Ação Emergencial Recomendada"; corCvss = "#e53935"; }
+    else if (cvssFloat >= 7.0) { sugestao = "Aplicar Correção na próxima janela"; corCvss = "#f4511e"; }
+    else if (cvssFloat >= 4.0) { sugestao = "Planejar atualização no próximo ciclo"; corCvss = "#f9a825"; }
+    else { corCvss = "#4caf50"; }
   }
 
-  const dataAtual = new Date().toLocaleString("pt-BR", {
-    day: "2-digit", month: "long", year: "numeric",
-    hour: "2-digit", minute: "2-digit",
-  });
+  return `<div style="font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; color: #333; line-height: 1.5; max-width: 900px; margin: 20px auto; border: 1px solid #e0e0e0; padding: 30px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); background-color: #fff;">
+    <h1 style="font-size: 24px; color: #1a1a1a; border-bottom: 1px solid #eaeaea; padding-bottom: 15px; margin-top: 0;">Modelos de Relatório &#128438;</h1>
 
-  return `
-<div style="font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;color:#333;line-height:1.6;max-width:900px;margin:20px auto;border:1px solid #e0e0e0;padding:0;box-shadow:0 2px 8px rgba(0,0,0,0.08);background:#fff;border-radius:4px;overflow:hidden;">
+    <p style="font-size: 14px;">O Tenable One Vulnerability Management fornece uma seleção de modelos de relatório e formatos de relatório personalizáveis. Você pode configurar um modelo de relatório fornecido pela Tenable ou criar um relatório totalmente personalizado a partir de um dos formatos disponíveis.</p>
+    <p style="font-size: 14px;">Para um índice completo dos modelos de relatório fornecidos pela Tenable, consulte <a href="#" style="color: #007bc1; text-decoration: none;">Modelos de Relatório do Tenable One Vulnerability Management</a>.</p>
 
-  <!-- Cabeçalho -->
-  <div style="background:#1a2228;padding:20px 30px;display:flex;align-items:center;justify-content:space-between;">
-    <div>
-      <div style="color:#00e5ff;font-family:monospace;font-size:11px;letter-spacing:0.1em;text-transform:uppercase;margin-bottom:4px;">Boletim de Segurança — Tenable One</div>
-      <div style="color:#fff;font-size:20px;font-weight:bold;">${vuln.cveId}</div>
-      <div style="color:#90a4ae;font-size:13px;margin-top:4px;">${vuln.tech}</div>
-    </div>
-    <div style="background:${corSeveridade};color:#fff;font-family:monospace;font-size:13px;font-weight:bold;padding:6px 16px;border-radius:3px;text-transform:uppercase;letter-spacing:0.08em;">
-      ${severidade}${!isNaN(cvssFloat) ? ` · ${vuln.cvss}` : ""}
-    </div>
-  </div>
-
-  <!-- Alerta de exploração ativa -->
-  ${vuln.cvss === "N/D (Exploração Ativa)" ? `
-  <div style="background:#ffebee;border-left:4px solid #e53935;padding:12px 30px;font-size:13px;color:#b71c1c;">
-    ⚠️ <strong>Exploração ativa confirmada pela CISA KEV.</strong> Esta vulnerabilidade está sendo ativamente explorada em ambiente real. Priorize a mitigação.
-  </div>` : ""}
-
-  <div style="padding:28px 30px;">
-
-    <!-- Resumo executivo -->
-    <div style="background:#f4f8fd;border-left:4px solid #007bc1;padding:14px 18px;margin-bottom:24px;border-radius:0 4px 4px 0;">
-      <div style="font-size:11px;font-family:monospace;color:#607d8b;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:6px;">Resumo Executivo</div>
-      <p style="margin:0;font-size:14px;">${vuln.description}</p>
+    <div style="background-color: #eaffea; border-left: 4px solid #00d282; padding: 12px 15px; margin: 20px 0; font-size: 13px;">
+        <p style="margin: 0;"><strong>Dica:</strong> Para obter mais informações sobre os dados específicos incluídos em cada relatório individual, consulte <a href="#" style="color: #007bc1; text-decoration: none;">Exibir Detalhes do Relatório</a>.</p>
     </div>
 
-    <!-- Metadados -->
-    <table style="width:100%;border-collapse:collapse;font-size:14px;margin-bottom:24px;">
-      <tr style="background:#f9f9f9;">
-        <td style="padding:10px 14px;color:#555;font-weight:600;width:220px;border:1px solid #eee;">Identificador</td>
-        <td style="padding:10px 14px;font-family:monospace;border:1px solid #eee;">${vuln.cveId}</td>
-      </tr>
-      <tr>
-        <td style="padding:10px 14px;color:#555;font-weight:600;border:1px solid #eee;">Tecnologia Afetada</td>
-        <td style="padding:10px 14px;border:1px solid #eee;">${vuln.tech}</td>
-      </tr>
-      <tr style="background:#f9f9f9;">
-        <td style="padding:10px 14px;color:#555;font-weight:600;border:1px solid #eee;">Fonte de Inteligência</td>
-        <td style="padding:10px 14px;border:1px solid #eee;">${vuln.source}</td>
-      </tr>
-      <tr>
-        <td style="padding:10px 14px;color:#555;font-weight:600;border:1px solid #eee;">Pontuação CVSSv3</td>
-        <td style="padding:10px 14px;border:1px solid #eee;">
-          <span style="background:${corSeveridade};color:#fff;padding:3px 10px;border-radius:3px;font-weight:bold;font-size:13px;">
-            ${vuln.cvss} — ${severidade}
-          </span>
-        </td>
-      </tr>
-      <tr style="background:#f9f9f9;">
-        <td style="padding:10px 14px;color:#555;font-weight:600;border:1px solid #eee;">Ação Sugerida</td>
-        <td style="padding:10px 14px;border:1px solid #eee;color:${corSeveridade};font-weight:600;">${sugestao}</td>
-      </tr>
+    <div style="background-color: #f4f8fd; border-left: 4px solid #007bc1; padding: 15px; margin: 20px 0; font-size: 13px;">
+        <p style="margin-top: 0;">Nota: O <strong>Relatório de Seguro Cibernético</strong> inclui as seguintes ressalvas:</p>
+        <ul style="padding-left: 20px; margin-bottom: 10px;">
+            <li style="margin-bottom: 6px;">O relatório não pode ser editado de forma alguma. Isso garante que os subscritores possam ter certeza de que suas métricas são 100% precisas.</li>
+            <li style="margin-bottom: 6px;">Este relatório inclui apenas dados do Explore dos últimos 180 dias.</li>
+            <li style="margin-bottom: 6px;">Este relatório está disponível apenas para clientes com relatórios do Explore habilitados em seu contêiner.</li>
+            <li style="margin-bottom: 6px;">O nome do relatório não muda nas gerações subsequentes do relatório. Por exemplo, o carimbo de data/hora no nome do relatório não é atualizado na próxima vez que você executar o relatório, no entanto, os dados do relatório em si incluem a data em que o relatório foi executado mais recentemente.</li>
+            <li>As severidades são relatadas usando apenas pontuações base CVSSv3.</li>
+        </ul>
+        <p style="margin-bottom: 0;">Para mais informações, consulte a postagem do blog <a href="#" style="color: #007bc1; text-decoration: none;">Relatório de Seguro Cibernético</a>.</p>
+    </div>
+
+    <div style="margin: 30px 0; padding: 20px; border: 1px solid #dcdcdc; border-radius: 4px; background-color: #fbfbfb;">
+        <h2 style="font-size: 18px; margin-top: 0; color: #005a8c;">Detalhes da Ameaça: ${vuln.cveId} (${vuln.tech})</h2>
+        <p style="font-size: 14px;"><strong>Fonte de Inteligência:</strong> ${vuln.source}</p>
+        <p style="font-size: 14px;"><strong>Descrição:</strong> ${vuln.description}</p>
+        <p style="font-size: 14px;"><strong>Mitigação Sugerida:</strong> ${vuln.solution}</p>
+        <p style="font-size: 14px;"><strong>Base Score CVSSv3:</strong> <span style="background-color: ${corCvss}; color: #fff; padding: 2px 6px; border-radius: 3px; font-weight: bold;">${vuln.cvss}</span></p>
+        <p style="font-size: 14px;"><strong>Ação Recomendada:</strong> <em>${sugestao}</em></p>
+    </div>
+
+    <hr style="border: 0; border-top: 1px solid #eaeaea; margin: 30px 0;">
+
+    <p style="font-size: 14px;">Você pode compartilhar modelos de relatório com outros usuários dentro da organização.</p>
+    <p style="font-size: 14px;">Para compartilhar modelos de relatório:</p>
+    <ol style="font-size: 14px; padding-left: 20px;">
+        <li style="margin-bottom: 10px;">Na navegação à esquerda, clique em <strong>&#128196; Relatórios</strong>.<br>A página Relatórios é exibida.</li>
+        <li>Selecione os modelos de relatório que você deseja compartilhar:</li>
+    </ol>
+
+    <table style="width: 100%; border-collapse: collapse; margin: 20px 0; font-size: 13px;">
+        <thead>
+            <tr style="background-color: #1a2228; color: #fff;">
+                <th style="padding: 12px; text-align: left; border: 1px solid #1a2228; width: 25%;">Escopo</th>
+                <th style="padding: 12px; text-align: left; border: 1px solid #1a2228; width: 75%;">Ação</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td style="padding: 15px; border: 1px solid #ddd; vertical-align: top; background-color: #fafafa;">Compartilhar um único relatório</td>
+                <td style="padding: 15px; border: 1px solid #ddd; vertical-align: top;">
+                    <p style="margin-top: 0;">Para compartilhar modelos de relatório a partir da página <strong>Relatórios</strong>:</p>
+                    <ol type="a" style="padding-left: 20px;">
+                        <li style="margin-bottom: 12px;">
+                            Na guia <strong>Meus Modelos de Relatório</strong>, clique com o botão direito na linha do modelo de relatório que você deseja compartilhar.<br><br>
+                            -ou-<br><br>
+                            Na guia <strong>Meus Modelos de Relatório</strong>, na coluna <strong>Ações</strong>, clique no botão <strong>&#8942;</strong> na linha do modelo de relatório que deseja compartilhar.<br>
+                            Os botões de ação aparecem na linha.<br><br>
+                            -ou-<br><br>
+                            Na guia <strong>Meus Modelos de Relatório</strong>, marque a caixa de seleção ao lado do modelo de relatório que você deseja compartilhar.<br>
+                            Na barra de ações, o Tenable One Vulnerability Management habilita <strong>Mais > Compartilhar</strong>.
+                        </li>
+                        <li>Clique em <strong>&#10150; Compartilhar</strong>.</li>
+                    </ol>
+                    <p style="margin-bottom: 0;">O painel Compartilhar aparece.</p>
+                    <div style="border: 1px solid #e0e0e0; padding: 15px; margin-top: 15px; border-radius: 4px; background-color: #fff; width: 250px;">
+                        <strong style="display:block; margin-bottom: 10px;">Compartilhar</strong>
+                        <p style="font-size: 11px; color: #666; margin-bottom: 15px; background-color: #e6f2f9; padding: 8px; border-left: 3px solid #007bc1;">
+                            Cuidado: Você está compartilhando um modelo de relatório com um usuário que pode usá-lo para gerar relatórios. Quaisquer alterações feitas no modelo não refletirão no modelo compartilhado.
+                        </p>
+                        <span style="font-size: 10px; color: #888; text-transform: uppercase;">SELECIONAR USUÁRIOS OU GRUPOS</span><br>
+                        <label style="font-size: 12px;"><input type="checkbox" checked> Todos os Usuários</label><br>
+                        <input type="text" placeholder="Pesquisar por usuário ou nome do grupo" style="width: 100%; padding: 5px; margin-top: 5px; border: 1px solid #ccc; border-radius: 3px; font-size: 12px;">
+                    </div>
+                </td>
+            </tr>
+        </tbody>
     </table>
 
-    <!-- Mitigação -->
-    <div style="margin-bottom:24px;">
-      <div style="font-size:11px;font-family:monospace;color:#607d8b;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:8px;">Mitigação e Ações Recomendadas</div>
-      <div style="background:#f4fff6;border-left:4px solid #00c853;padding:14px 18px;border-radius:0 4px 4px 0;font-size:14px;">
-        ${vuln.solution}
-      </div>
-    </div>
-
-  </div>
-
-  <!-- Rodapé -->
-  <div style="background:#f5f5f5;border-top:1px solid #eee;padding:14px 30px;font-size:11px;color:#888;display:flex;justify-content:space-between;align-items:center;">
-    <span>Relatório gerado em ${dataAtual} — Deep Research de Vulnerabilidades (SecOps)</span>
-    <span style="font-family:monospace;color:#b0bec5;">CVSSv3 Base Score · ${vuln.source}</span>
-  </div>
-</div>`.trim();
+    <ol start="3" style="font-size: 14px; padding-left: 20px;">
+        <li style="margin-bottom: 10px;">Na seção <strong>Selecionar Usuários ou Grupos</strong>, selecione <strong>Todos os Usuários</strong> ou pesquise usuários ou grupos específicos.</li>
+        <li style="margin-bottom: 10px;">Clique em <strong>Compartilhar</strong>.</li>
+    </ol>
+    <p style="font-size: 14px; color: #555;">O Tenable One Vulnerability Management compartilha o modelo de relatório com os usuários que podem visualizá-los na guia <strong>Modelos de Relatório Compartilhados</strong>. Cada usuário recebe uma notificação por e-mail com detalhes do relatório compartilhado, o endereço de e-mail do remetente e um link para o relatório compartilhado.</p>
+</div>`;
 }
