@@ -9,7 +9,7 @@ export interface CveResult {
   source: string;
 }
 
-async function fetchWithTimeout(url: string, options: RequestInit = {}, timeoutMs = 12000): Promise<Response> {
+async function fetchWithTimeout(url: string, options: RequestInit = {}, timeoutMs = 14000): Promise<Response> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -19,6 +19,7 @@ async function fetchWithTimeout(url: string, options: RequestInit = {}, timeoutM
   }
 }
 
+// ─── CISA KEV ────────────────────────────────────────────────────────────────
 export async function searchCisaKev(tech: string): Promise<CveResult[]> {
   const url = "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json";
   const results: CveResult[] = [];
@@ -50,6 +51,7 @@ export async function searchCisaKev(tech: string): Promise<CveResult[]> {
   return results;
 }
 
+// ─── OSV.dev ─────────────────────────────────────────────────────────────────
 export async function searchOsvDev(tech: string): Promise<CveResult[]> {
   const url = "https://api.osv.dev/v1/query";
   const results: CveResult[] = [];
@@ -77,6 +79,7 @@ export async function searchOsvDev(tech: string): Promise<CveResult[]> {
   return results;
 }
 
+// ─── CIRCL ───────────────────────────────────────────────────────────────────
 export async function searchCircl(tech: string): Promise<CveResult[]> {
   const url = `https://cve.circl.lu/api/search/${encodeURIComponent(tech.toLowerCase())}`;
   const results: CveResult[] = [];
@@ -100,6 +103,7 @@ export async function searchCircl(tech: string): Promise<CveResult[]> {
   return results;
 }
 
+// ─── NVD / NIST ──────────────────────────────────────────────────────────────
 export async function searchNvd(tech: string): Promise<CveResult[]> {
   const results: CveResult[] = [];
   try {
@@ -112,8 +116,7 @@ export async function searchNvd(tech: string): Promise<CveResult[]> {
       keywordSearch: tech,
       resultsPerPage: "2",
     });
-    // NVD rate-limit: 6s delay between requests if no API key
-    await new Promise((r) => setTimeout(r, 6000));
+    await new Promise((r) => setTimeout(r, 6000)); // NVD rate-limit sem token
     const resp = await fetchWithTimeout(`https://services.nvd.nist.gov/rest/json/cves/2.0?${params}`, {}, 20000);
     if (!resp.ok) return results;
     const data = await resp.json() as { vulnerabilities?: { cve: Record<string, unknown> }[] };
@@ -121,10 +124,10 @@ export async function searchNvd(tech: string): Promise<CveResult[]> {
       const cve = item.cve;
       const metrics = cve["metrics"] as Record<string, unknown> | undefined;
       let cvss = "N/D";
-      if (metrics && metrics["cvssMetricV31"]) {
+      if (metrics?.["cvssMetricV31"]) {
         const m = (metrics["cvssMetricV31"] as { cvssData?: { baseScore?: number } }[])[0];
         if (m?.cvssData?.baseScore != null) cvss = String(m.cvssData.baseScore);
-      } else if (metrics && metrics["cvssMetricV30"]) {
+      } else if (metrics?.["cvssMetricV30"]) {
         const m = (metrics["cvssMetricV30"] as { cvssData?: { baseScore?: number } }[])[0];
         if (m?.cvssData?.baseScore != null) cvss = String(m.cvssData.baseScore);
       }
@@ -145,6 +148,126 @@ export async function searchNvd(tech: string): Promise<CveResult[]> {
   return results;
 }
 
+// ─── Red Hat Security Advisory ───────────────────────────────────────────────
+export async function searchRedHat(tech: string): Promise<CveResult[]> {
+  const results: CveResult[] = [];
+  try {
+    const after = new Date();
+    after.setDate(after.getDate() - 30);
+    const params = new URLSearchParams({
+      after: after.toISOString().split("T")[0],
+      severity: "Critical,Important",
+      per_page: "5",
+      keyword: tech,
+    });
+    const resp = await fetchWithTimeout(
+      `https://access.redhat.com/hydra/rest/securitydata/cve.json?${params}`
+    );
+    if (!resp.ok) return results;
+    const data = await resp.json() as {
+      CVE?: string;
+      severity?: string;
+      public_date?: string;
+      bugzilla_description?: string;
+      cvss3_score?: string;
+      affected_release?: { product_name?: string }[];
+      package_state?: { product_name?: string }[];
+    }[];
+
+    const techLower = tech.toLowerCase();
+    for (const vuln of (Array.isArray(data) ? data : []).slice(0, 3)) {
+      // Filter by relevance to technology
+      const desc = vuln.bugzilla_description ?? "";
+      const affected = [
+        ...(vuln.affected_release ?? []).map((r) => r.product_name ?? ""),
+        ...(vuln.package_state ?? []).map((r) => r.product_name ?? ""),
+      ].join(" ").toLowerCase();
+
+      if (!desc.toLowerCase().includes(techLower) && !affected.includes(techLower)) continue;
+
+      const cvss = vuln.cvss3_score ?? "N/D";
+      results.push({
+        id: vuln.CVE ?? `RHSA-${Date.now()}`,
+        tech,
+        desc: desc || "Consultar boletim Red Hat para detalhes.",
+        solution: "Aplicar errata de segurança disponível no Portal do Cliente Red Hat (access.redhat.com).",
+        cvss,
+        source: "Red Hat Security Advisory",
+      });
+    }
+  } catch (err) {
+    logger.warn({ err, tech }, "Red Hat fetch failed");
+  }
+  return results;
+}
+
+// ─── Microsoft Patch Tuesday (MSRC) ─────────────────────────────────────────
+export async function searchMicrosoftPatchTuesday(tech: string): Promise<CveResult[]> {
+  const results: CveResult[] = [];
+  try {
+    // Get updates list to find the latest Patch Tuesday document
+    const updatesResp = await fetchWithTimeout(
+      "https://api.msrc.microsoft.com/cvrf/v2.0/updates",
+      { headers: { Accept: "application/json" } }
+    );
+    if (!updatesResp.ok) return results;
+
+    const updates = await updatesResp.json() as {
+      value?: { ID?: string; DocumentTitle?: string; CurrentReleaseDate?: string }[];
+    };
+
+    // Get the most recent update (first in list)
+    const latest = updates.value?.[0];
+    if (!latest?.ID) return results;
+
+    const cvrfResp = await fetchWithTimeout(
+      `https://api.msrc.microsoft.com/cvrf/v2.0/cvrf/${latest.ID}`,
+      { headers: { Accept: "application/json" } }
+    );
+    if (!cvrfResp.ok) return results;
+
+    const cvrf = await cvrfResp.json() as {
+      Vulnerability?: {
+        CVE?: string;
+        Title?: { Value?: string };
+        Notes?: { Value?: string; Title?: string }[];
+        CVSSScoreSets?: { BaseScore?: number }[];
+        ProductStatuses?: { ProductID?: string[] }[];
+      }[];
+    };
+
+    const techLower = tech.toLowerCase();
+    const vulns = cvrf.Vulnerability ?? [];
+
+    for (const vuln of vulns) {
+      const title = vuln.Title?.Value ?? "";
+      const notes = vuln.Notes?.map((n) => n.Value ?? "").join(" ") ?? "";
+      if (!title.toLowerCase().includes(techLower) && !notes.toLowerCase().includes(techLower)) continue;
+
+      const cvss = String(vuln.CVSSScoreSets?.[0]?.BaseScore ?? "N/D");
+      const desc = vuln.Notes?.find((n) => n.Title === "Description")?.Value
+        ?? vuln.Notes?.find((n) => n.Title === "FAQ")?.Value
+        ?? title
+        ?? "Consultar boletim Microsoft para detalhes.";
+
+      results.push({
+        id: vuln.CVE ?? `MSRC-${Date.now()}`,
+        tech,
+        desc,
+        solution: `Instalar atualização de segurança do Patch Tuesday de ${latest.DocumentTitle ?? latest.ID}. Acesse o Microsoft Update Catalog para obter o patch correspondente.`,
+        cvss,
+        source: `Microsoft Patch Tuesday (${latest.DocumentTitle ?? latest.ID})`,
+      });
+
+      if (results.length >= 3) break;
+    }
+  } catch (err) {
+    logger.warn({ err, tech }, "Microsoft Patch Tuesday fetch failed");
+  }
+  return results;
+}
+
+// ─── Relatório HTML estilo Tenable (todo em português) ───────────────────────
 export function generateTenableReport(vuln: {
   cveId: string;
   tech: string;
@@ -154,73 +277,100 @@ export function generateTenableReport(vuln: {
   cvss: string;
 }): string {
   const cvssFloat = parseFloat(vuln.cvss);
-  let severity = "Informativo";
-  let severityColor = "#2196f3";
+  let severidade = "Informativo";
+  let corSeveridade = "#2196f3";
+  let sugestao = "Monitorar e planejar atualização";
+
   if (vuln.cvss === "N/D (Exploração Ativa)" || cvssFloat >= 9.0) {
-    severity = "Crítico";
-    severityColor = "#e53935";
+    severidade = "Crítico";
+    corSeveridade = "#e53935";
+    sugestao = "Ação emergencial recomendada — mitigar imediatamente";
   } else if (cvssFloat >= 7.0) {
-    severity = "Alto";
-    severityColor = "#f4511e";
+    severidade = "Alto";
+    corSeveridade = "#f4511e";
+    sugestao = "Aplicar correção na próxima janela de manutenção";
   } else if (cvssFloat >= 4.0) {
-    severity = "Médio";
-    severityColor = "#f9a825";
+    severidade = "Médio";
+    corSeveridade = "#f9a825";
+    sugestao = "Planejar atualização no próximo ciclo";
   }
 
-  return `
-<div style="font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; color: #333; line-height: 1.5; max-width: 900px; margin: 20px auto; border: 1px solid #e0e0e0; padding: 30px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); background-color: #fff;">
-  <h1 style="font-size: 22px; color: #1a1a1a; border-bottom: 1px solid #eaeaea; padding-bottom: 15px; margin-top: 0;">
-    Relatório de Vulnerabilidade — Tenable One
-  </h1>
+  const dataAtual = new Date().toLocaleString("pt-BR", {
+    day: "2-digit", month: "long", year: "numeric",
+    hour: "2-digit", minute: "2-digit",
+  });
 
-  <div style="background-color: #eaffea; border-left: 4px solid #00d282; padding: 12px 15px; margin: 20px 0; font-size: 13px;">
-    <strong>Fonte:</strong> ${vuln.source} &mdash; Este relatório é gerado automaticamente a partir de bases públicas de inteligência de ameaças.
+  return `
+<div style="font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;color:#333;line-height:1.6;max-width:900px;margin:20px auto;border:1px solid #e0e0e0;padding:0;box-shadow:0 2px 8px rgba(0,0,0,0.08);background:#fff;border-radius:4px;overflow:hidden;">
+
+  <!-- Cabeçalho -->
+  <div style="background:#1a2228;padding:20px 30px;display:flex;align-items:center;justify-content:space-between;">
+    <div>
+      <div style="color:#00e5ff;font-family:monospace;font-size:11px;letter-spacing:0.1em;text-transform:uppercase;margin-bottom:4px;">Boletim de Segurança — Tenable One</div>
+      <div style="color:#fff;font-size:20px;font-weight:bold;">${vuln.cveId}</div>
+      <div style="color:#90a4ae;font-size:13px;margin-top:4px;">${vuln.tech}</div>
+    </div>
+    <div style="background:${corSeveridade};color:#fff;font-family:monospace;font-size:13px;font-weight:bold;padding:6px 16px;border-radius:3px;text-transform:uppercase;letter-spacing:0.08em;">
+      ${severidade}${!isNaN(cvssFloat) ? ` · ${vuln.cvss}` : ""}
+    </div>
   </div>
 
-  <div style="margin: 30px 0; padding: 20px; border: 1px solid #dcdcdc; border-radius: 4px; background-color: #fbfbfb;">
-    <h2 style="font-size: 18px; margin-top: 0; color: #005a8c;">
-      ${vuln.cveId} — ${vuln.tech}
-    </h2>
-    <table style="width: 100%; font-size: 14px; border-collapse: collapse;">
+  <!-- Alerta de exploração ativa -->
+  ${vuln.cvss === "N/D (Exploração Ativa)" ? `
+  <div style="background:#ffebee;border-left:4px solid #e53935;padding:12px 30px;font-size:13px;color:#b71c1c;">
+    ⚠️ <strong>Exploração ativa confirmada pela CISA KEV.</strong> Esta vulnerabilidade está sendo ativamente explorada em ambiente real. Priorize a mitigação.
+  </div>` : ""}
+
+  <div style="padding:28px 30px;">
+
+    <!-- Resumo executivo -->
+    <div style="background:#f4f8fd;border-left:4px solid #007bc1;padding:14px 18px;margin-bottom:24px;border-radius:0 4px 4px 0;">
+      <div style="font-size:11px;font-family:monospace;color:#607d8b;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:6px;">Resumo Executivo</div>
+      <p style="margin:0;font-size:14px;">${vuln.description}</p>
+    </div>
+
+    <!-- Metadados -->
+    <table style="width:100%;border-collapse:collapse;font-size:14px;margin-bottom:24px;">
+      <tr style="background:#f9f9f9;">
+        <td style="padding:10px 14px;color:#555;font-weight:600;width:220px;border:1px solid #eee;">Identificador</td>
+        <td style="padding:10px 14px;font-family:monospace;border:1px solid #eee;">${vuln.cveId}</td>
+      </tr>
       <tr>
-        <td style="padding: 8px 0; width: 200px; color: #555; font-weight: bold;">Identificador:</td>
-        <td style="padding: 8px 0;">${vuln.cveId}</td>
+        <td style="padding:10px 14px;color:#555;font-weight:600;border:1px solid #eee;">Tecnologia Afetada</td>
+        <td style="padding:10px 14px;border:1px solid #eee;">${vuln.tech}</td>
       </tr>
-      <tr style="background-color: #f9f9f9;">
-        <td style="padding: 8px; color: #555; font-weight: bold;">Tecnologia Afetada:</td>
-        <td style="padding: 8px;">${vuln.tech}</td>
+      <tr style="background:#f9f9f9;">
+        <td style="padding:10px 14px;color:#555;font-weight:600;border:1px solid #eee;">Fonte de Inteligência</td>
+        <td style="padding:10px 14px;border:1px solid #eee;">${vuln.source}</td>
       </tr>
       <tr>
-        <td style="padding: 8px 0; color: #555; font-weight: bold;">Fonte de Inteligência:</td>
-        <td style="padding: 8px 0;">${vuln.source}</td>
-      </tr>
-      <tr style="background-color: #f9f9f9;">
-        <td style="padding: 8px; color: #555; font-weight: bold;">Base Score CVSSv3:</td>
-        <td style="padding: 8px;">
-          <span style="background-color: ${severityColor}; color: #fff; padding: 2px 10px; border-radius: 3px; font-weight: bold; font-size: 13px;">
-            ${vuln.cvss} — ${severity}
+        <td style="padding:10px 14px;color:#555;font-weight:600;border:1px solid #eee;">Pontuação CVSSv3</td>
+        <td style="padding:10px 14px;border:1px solid #eee;">
+          <span style="background:${corSeveridade};color:#fff;padding:3px 10px;border-radius:3px;font-weight:bold;font-size:13px;">
+            ${vuln.cvss} — ${severidade}
           </span>
         </td>
       </tr>
+      <tr style="background:#f9f9f9;">
+        <td style="padding:10px 14px;color:#555;font-weight:600;border:1px solid #eee;">Ação Sugerida</td>
+        <td style="padding:10px 14px;border:1px solid #eee;color:${corSeveridade};font-weight:600;">${sugestao}</td>
+      </tr>
     </table>
+
+    <!-- Mitigação -->
+    <div style="margin-bottom:24px;">
+      <div style="font-size:11px;font-family:monospace;color:#607d8b;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:8px;">Mitigação e Ações Recomendadas</div>
+      <div style="background:#f4fff6;border-left:4px solid #00c853;padding:14px 18px;border-radius:0 4px 4px 0;font-size:14px;">
+        ${vuln.solution}
+      </div>
+    </div>
+
   </div>
 
-  <div style="margin: 20px 0;">
-    <h3 style="font-size: 15px; color: #1a2228; margin-bottom: 8px;">Descrição</h3>
-    <p style="font-size: 14px; background-color: #f4f8fd; border-left: 4px solid #007bc1; padding: 12px 15px; margin: 0;">${vuln.description}</p>
+  <!-- Rodapé -->
+  <div style="background:#f5f5f5;border-top:1px solid #eee;padding:14px 30px;font-size:11px;color:#888;display:flex;justify-content:space-between;align-items:center;">
+    <span>Relatório gerado em ${dataAtual} — Deep Research de Vulnerabilidades (SecOps)</span>
+    <span style="font-family:monospace;color:#b0bec5;">CVSSv3 Base Score · ${vuln.source}</span>
   </div>
-
-  <div style="margin: 20px 0;">
-    <h3 style="font-size: 15px; color: #1a2228; margin-bottom: 8px;">Mitigação Recomendada</h3>
-    <p style="font-size: 14px; background-color: #f9fff9; border-left: 4px solid #00d282; padding: 12px 15px; margin: 0;">${vuln.solution}</p>
-  </div>
-
-  <hr style="border: 0; border-top: 1px solid #eaeaea; margin: 30px 0;">
-
-  <p style="font-size: 12px; color: #888;">
-    Relatório gerado em ${new Date().toLocaleString("pt-BR")} via Deep Research de Vulnerabilidades.
-    Para mais informações, consulte os boletins oficiais do fabricante e as bases CVE/NVD.
-  </p>
-</div>
-`.trim();
+</div>`.trim();
 }
