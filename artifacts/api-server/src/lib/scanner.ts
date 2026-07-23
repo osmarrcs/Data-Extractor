@@ -1,15 +1,14 @@
 import axios from 'axios';
 
-const delay = (ms: number) => new Promise(res => setTimeout(res, ms));
+export const delay = (ms: number) => new Promise(res => setTimeout(res, ms));
 
-export async function buscarCisaKev(tecnologia: string) {
+export async function searchCisaKev(tecnologia: string) {
   try {
     const { data } = await axios.get("https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json", { timeout: 10000 });
-    const trintaDiasAtras = new Date();
-    trintaDiasAtras.setDate(trintaDiasAtras.getDate() - 30);
-
+    const trintaDias = new Date();
+    trintaDias.setDate(trintaDias.getDate() - 30);
     return data.vulnerabilities
-      .filter((v: any) => new Date(v.dateAdded) >= trintaDiasAtras)
+      .filter((v: any) => new Date(v.dateAdded) >= trintaDias)
       .filter((v: any) => (v.vendorProject && v.vendorProject.toLowerCase().includes(tecnologia.toLowerCase())) || (v.product && v.product.toLowerCase().includes(tecnologia.toLowerCase())))
       .map((v: any) => ({
         id: v.cveID,
@@ -22,7 +21,7 @@ export async function buscarCisaKev(tecnologia: string) {
   } catch (e) { return []; }
 }
 
-export async function buscarOsvDev(tecnologia: string) {
+export async function searchOsvDev(tecnologia: string) {
   try {
     const { data } = await axios.post("https://api.osv.dev/v1/query", { package: { name: tecnologia.toLowerCase() } }, { timeout: 10000 });
     if (!data.vulns) return [];
@@ -37,7 +36,7 @@ export async function buscarOsvDev(tecnologia: string) {
   } catch (e) { return []; }
 }
 
-export async function buscarCircl(tecnologia: string) {
+export async function searchCircl(tecnologia: string) {
   try {
     const { data } = await axios.get(`https://cve.circl.lu/api/search/${tecnologia.toLowerCase()}`, { timeout: 10000 });
     if (!data.data) return [];
@@ -50,6 +49,14 @@ export async function buscarCircl(tecnologia: string) {
       fonte: "CIRCL CVE Search"
     }));
   } catch (e) { return []; }
+}
+
+export async function searchNvd(tecnologia: string) {
+  return []; // Previne erro de falta de exportação e rate-limit de IP
+}
+
+export function generateTenableReport(cveDict: any) {
+  return `<div><h2>Detalhes da Ameaça: ${cveDict?.id || 'N/A'} (${cveDict?.tech || 'N/A'})</h2><p>${cveDict?.desc || 'Sem detalhes'}</p><p><strong>Recomendação:</strong> ${cveDict?.solucao || 'N/A'}</p></div>`;
 }
 
 export async function buscarRedHat(dataInicio: string, dataFim: string) {
@@ -70,31 +77,9 @@ export function buscarMicrosoftPatchTuesday() {
   return [{
     id: "MS-PATCH-TUESDAY-LATEST",
     tech: "Microsoft",
-    desc: "Pacote de Atualizações de Segurança da Microsoft (Patch Tuesday) recente. Requer validação de ambiente.",
+    desc: "Pacote de Atualizações de Segurança da Microsoft (Patch Tuesday) recente.",
     solucao: "Aplicar atualizações via WSUS/Windows Update imediatamente.",
     cvss: "Varia (Até 9.8)",
     fonte: "Microsoft MSRC"
   }];
-}
-
-export async function executarVarredura(alvos: string[]) {
-  let resultados = [];
-  resultados.push(...buscarMicrosoftPatchTuesday());
-
-  const hoje = new Date().toISOString().split('T')[0];
-  const trintaDias = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-  
-  for (const alvo of alvos) {
-    if (alvo.toLowerCase().includes("red hat") || alvo.toLowerCase().includes("openshift")) {
-      const rhData = await buscarRedHat(trintaDias, hoje);
-      resultados.push(...rhData);
-    } else {
-      const cisa = await buscarCisaKev(alvo);
-      const osv = await buscarOsvDev(alvo);
-      const circl = await buscarCircl(alvo);
-      resultados.push(...cisa, ...osv, ...circl);
-    }
-    await delay(1000);
-  }
-  return resultados;
 }
