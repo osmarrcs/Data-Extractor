@@ -12,9 +12,19 @@ app.use(cors({
 
 app.use(express.json());
 
-// Lista Completa de Ativos (Garantindo FortiClient Servidor/Serviço e todas as aplicações)
+// Controle do Estado Global da Varredura
+let varreduraAtual = {
+  id: "scan-" + Date.now(),
+  status: 'idle', // 'idle' | 'running' | 'paused' | 'completed'
+  progresso: 0,
+  tecnologiaAtual: '',
+  totalTecnologias: 0,
+  processadas: 0,
+  resultados: [] as any[]
+};
+
+// Lista Completa de Tecnologias/Ativos
 const TECNOLOGIAS_COMPLETAS = [
-  // Infraestrutura & Fortinet Extendido
   { id: "fortigate", name: "Fortigate", category: "Infraestrutura" },
   { id: "fortinet-manager", name: "Fortinet Manager", category: "Infraestrutura" },
   { id: "fortinet-analyser", name: "Fortinet Analyser", category: "Infraestrutura" },
@@ -32,32 +42,24 @@ const TECNOLOGIAS_COMPLETAS = [
   { id: "operating-systems", name: "Operating Systems", category: "Infraestrutura" },
   { id: "cloud-platforms", name: "Cloud Platforms", category: "Infraestrutura" },
   { id: "virtualization-software", name: "Virtualization Software", category: "Infraestrutura" },
-  
-  // Sistemas de Produção
   { id: "git", name: "Git", category: "Sistemas de Produção" },
   { id: "ansible", name: "Ansible", category: "Sistemas de Produção" },
   { id: "kubernetes", name: "Kubernetes", category: "Sistemas de Produção" },
   { id: "cicd-tools", name: "CI/CD Tools", category: "Sistemas de Produção" },
   { id: "containers", name: "Containers", category: "Sistemas de Produção" },
   { id: "orchestration-platforms", name: "Orchestration Platforms", category: "Sistemas de Produção" },
-  
-  // Banco de Dados
   { id: "oracle", name: "Oracle", category: "Banco de Dados" },
   { id: "postgresql", name: "PostgreSQL", category: "Banco de Dados" },
   { id: "mysql", name: "MySQL", category: "Banco de Dados" },
   { id: "sql-server", name: "SQL Server", category: "Banco de Dados" },
   { id: "mongodb", name: "MongoDB", category: "Banco de Dados" },
   { id: "redis", name: "Redis", category: "Banco de Dados" },
-  
-  // Navegadores
   { id: "google-chrome", name: "Google Chrome", category: "Navegadores" },
   { id: "mozilla-firefox", name: "Mozilla Firefox", category: "Navegadores" },
   { id: "microsoft-edge", name: "Microsoft Edge", category: "Navegadores" },
   { id: "safari", name: "Safari", category: "Navegadores" },
   { id: "brave", name: "Brave", category: "Navegadores" },
   { id: "opera", name: "Opera", category: "Navegadores" },
-  
-  // Aplicações & Desenvolvimento
   { id: "winzip", name: "WinZip", category: "Aplicações / Desenvolvimento" },
   { id: "7zip", name: "7-Zip", category: "Aplicações / Desenvolvimento" },
   { id: "obs-studio", name: "OBS Studio", category: "Aplicações / Desenvolvimento" },
@@ -72,39 +74,60 @@ const TECNOLOGIAS_COMPLETAS = [
   { id: "streaming-software", name: "Streaming Software", category: "Aplicações / Desenvolvimento" }
 ];
 
-app.get('/', (req, res) => {
-  res.status(200).json({ status: 'ok', service: 'secops-api' });
+// Health checks
+app.get('/', (req, res) => res.json({ status: 'ok', service: 'secops-api' }));
+app.get('/api/health', (req, res) => res.json({ status: 'ok' }));
+
+// Lista Tecnologias
+app.get('/api/technologies', (req, res) => res.json(TECNOLOGIAS_COMPLETAS));
+
+// ROTA FALTANTE: POST /api/scans (Iniciar Varredura)
+app.post('/api/scans', (req, res) => {
+  const { technologies } = req.body || {};
+  const alvos = Array.isArray(technologies) && technologies.length > 0 
+    ? technologies 
+    : TECNOLOGIAS_COMPLETAS.map(t => t.id);
+
+  varreduraAtual = {
+    id: "scan-" + Date.now(),
+    status: 'running',
+    progresso: 0,
+    tecnologiaAtual: alvos[0] || 'Iniciando...',
+    totalTecnologias: alvos.length,
+    processadas: 0,
+    resultados: []
+  };
+
+  res.status(201).json({
+    message: "Varredura iniciada com sucesso",
+    scan: varreduraAtual
+  });
 });
 
-app.get('/api/health', (req, res) => {
-  res.status(200).json({ status: 'ok' });
+// GET /api/scans/current (Status da varredura atual)
+app.get('/api/scans/current', (req, res) => {
+  res.json(varreduraAtual);
 });
 
-// Endpoint das Tecnologias/Ativos
-app.get('/api/technologies', (req, res) => {
-  res.json(TECNOLOGIAS_COMPLETAS);
+// POST /api/scans/pause (Pausar/Retomar)
+app.post('/api/scans/pause', (req, res) => {
+  if (varreduraAtual.status === 'running') {
+    varreduraAtual.status = 'paused';
+  } else if (varreduraAtual.status === 'paused') {
+    varreduraAtual.status = 'running';
+  }
+  res.json({ status: varreduraAtual.status, scan: varreduraAtual });
 });
 
-// ABA SEPARADA 1: Red Hat CVEs
+// ABAS SEPARADAS
 app.get('/api/vulnerabilities/redhat', (req, res) => {
-  res.json({
-    fonte: "Red Hat Security Data API",
-    aba: "Red Hat CVEs",
-    total: 0,
-    itens: []
-  });
+  res.json({ fonte: "Red Hat Security Data API", aba: "Red Hat CVEs", total: 0, itens: [] });
 });
 
-// ABA SEPARADA 2: Microsoft Patch Tuesday
 app.get('/api/vulnerabilities/patch-tuesday', (req, res) => {
-  res.json({
-    fonte: "Microsoft MSRC API",
-    aba: "Patch Tuesday",
-    total: 0,
-    itens: []
-  });
+  res.json({ fonte: "Microsoft MSRC API", aba: "Patch Tuesday", total: 0, itens: [] });
 });
 
 app.listen(Number(PORT), '0.0.0.0', () => {
-  console.log(`SecOps API rodando em 0.0.0.0 na porta ${PORT}`);
+  console.log(`SecOps API Server rodando em 0.0.0.0 na porta ${PORT}`);
 });
