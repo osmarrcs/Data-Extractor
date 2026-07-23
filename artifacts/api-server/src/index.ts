@@ -12,19 +12,20 @@ app.use(cors({
 
 app.use(express.json());
 
-// Controle do Estado Global da Varredura
-let varreduraAtual = {
+// Banco em memória para controle das varreduras
+let varreduraEstado = {
   id: "scan-" + Date.now(),
-  status: 'idle', // 'idle' | 'running' | 'paused' | 'completed'
+  status: 'idle',
   progresso: 0,
-  tecnologiaAtual: '',
-  totalTecnologias: 0,
-  processadas: 0,
-  resultados: [] as any[]
+  itemAtual: '',
+  estimativaRestanteSegundos: 0,
+  totalItens: 0,
+  itensProcessados: 0,
+  resultados: []
 };
 
-// Lista Completa de Tecnologias/Ativos
-const TECNOLOGIAS_COMPLETAS = [
+// Lista Completa dos seus Ativos
+const TECNOLOGIAS = [
   { id: "fortigate", name: "Fortigate", category: "Infraestrutura" },
   { id: "fortinet-manager", name: "Fortinet Manager", category: "Infraestrutura" },
   { id: "fortinet-analyser", name: "Fortinet Analyser", category: "Infraestrutura" },
@@ -74,60 +75,44 @@ const TECNOLOGIAS_COMPLETAS = [
   { id: "streaming-software", name: "Streaming Software", category: "Aplicações / Desenvolvimento" }
 ];
 
-// Health checks
+// Healthcheck do Render
 app.get('/', (req, res) => res.json({ status: 'ok', service: 'secops-api' }));
 app.get('/api/health', (req, res) => res.json({ status: 'ok' }));
 
-// Lista Tecnologias
-app.get('/api/technologies', (req, res) => res.json(TECNOLOGIAS_COMPLETAS));
+// Rotas de Tecnologias
+app.get('/api/technologies', (req, res) => res.json(TECNOLOGIAS));
 
-// ROTA FALTANTE: POST /api/scans (Iniciar Varredura)
+// Rotas da Varredura (POST / GET / PAUSE)
+app.get(['/api/scans', '/api/scans/current'], (req, res) => res.json(varreduraEstado));
+
 app.post('/api/scans', (req, res) => {
-  const { technologies } = req.body || {};
-  const alvos = Array.isArray(technologies) && technologies.length > 0 
-    ? technologies 
-    : TECNOLOGIAS_COMPLETAS.map(t => t.id);
-
-  varreduraAtual = {
+  varreduraEstado = {
     id: "scan-" + Date.now(),
     status: 'running',
-    progresso: 0,
-    tecnologiaAtual: alvos[0] || 'Iniciando...',
-    totalTecnologias: alvos.length,
-    processadas: 0,
+    progresso: 5,
+    itemAtual: 'Iniciando varredura...',
+    estimativaRestanteSegundos: 45,
+    totalItens: TECNOLOGIAS.length,
+    itensProcessados: 0,
     resultados: []
   };
-
-  res.status(201).json({
-    message: "Varredura iniciada com sucesso",
-    scan: varreduraAtual
-  });
+  res.status(201).json({ message: "Varredura iniciada", scan: varreduraEstado });
 });
 
-// GET /api/scans/current (Status da varredura atual)
-app.get('/api/scans/current', (req, res) => {
-  res.json(varreduraAtual);
-});
-
-// POST /api/scans/pause (Pausar/Retomar)
 app.post('/api/scans/pause', (req, res) => {
-  if (varreduraAtual.status === 'running') {
-    varreduraAtual.status = 'paused';
-  } else if (varreduraAtual.status === 'paused') {
-    varreduraAtual.status = 'running';
-  }
-  res.json({ status: varreduraAtual.status, scan: varreduraAtual });
+  varreduraEstado.status = varreduraEstado.status === 'paused' ? 'running' : 'paused';
+  res.json({ status: varreduraEstado.status, scan: varreduraEstado });
 });
 
-// ABAS SEPARADAS
+// Endpoints das Abas Dedicadas
 app.get('/api/vulnerabilities/redhat', (req, res) => {
-  res.json({ fonte: "Red Hat Security Data API", aba: "Red Hat CVEs", total: 0, itens: [] });
+  res.json({ fonte: "Red Hat Security Data API", total: 0, itens: [] });
 });
 
 app.get('/api/vulnerabilities/patch-tuesday', (req, res) => {
-  res.json({ fonte: "Microsoft MSRC API", aba: "Patch Tuesday", total: 0, itens: [] });
+  res.json({ fonte: "Microsoft MSRC API", total: 0, itens: [] });
 });
 
 app.listen(Number(PORT), '0.0.0.0', () => {
-  console.log(`SecOps API Server rodando em 0.0.0.0 na porta ${PORT}`);
+  console.log(`API SecOps rodando em 0.0.0.0:${PORT}`);
 });
