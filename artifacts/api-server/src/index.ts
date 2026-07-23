@@ -15,11 +15,4 @@ if (Number.isNaN(port) || port <= 0) {
   throw new Error(`Invalid PORT value: "${rawPort}"`);
 }
 
-app.listen(Number(process.env.PORT || 10000), '0.0.0.0', () => { console.log('API rodando em 0.0.0.0:' + (process.env.PORT || 10000)); });, '0.0.0.0', () => console.log('API rodando em 0.0.0.0')); => {
-  if (err) {
-    logger.error({ err }, "Error listening on port");
-    process.exit(1);
-  }
-
-  logger.info({ port }, "Server listening");
-});
+app.listen(Number(process.env.PORT || 10000), '0.0.0.0', () => { console.log('API rodando em 0.0.0.0'); });
