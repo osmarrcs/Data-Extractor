@@ -22,9 +22,39 @@ export async function buscarCisaKev(tecnologia: string) {
   } catch (e) { return []; }
 }
 
+export async function buscarOsvDev(tecnologia: string) {
+  try {
+    const { data } = await axios.post("https://api.osv.dev/v1/query", { package: { name: tecnologia.toLowerCase() } }, { timeout: 10000 });
+    if (!data.vulns) return [];
+    return data.vulns.slice(0, 2).map((v: any) => ({
+      id: v.id || "OSV-VULN",
+      tech: tecnologia,
+      desc: v.details || v.summary || "Detalhes na base OSV.",
+      solucao: "Atualizar biblioteca/pacote afetado.",
+      cvss: "N/D",
+      fonte: "OSV.dev"
+    }));
+  } catch (e) { return []; }
+}
+
+export async function buscarCircl(tecnologia: string) {
+  try {
+    const { data } = await axios.get(`https://cve.circl.lu/api/search/${tecnologia.toLowerCase()}`, { timeout: 10000 });
+    if (!data.data) return [];
+    return data.data.slice(0, 2).map((v: any) => ({
+      id: v.id,
+      tech: tecnologia,
+      desc: v.summary || "Sem descrição.",
+      solucao: "Verificar boletins do fabricante.",
+      cvss: String(v.cvss || "N/D"),
+      fonte: "CIRCL CVE Search"
+    }));
+  } catch (e) { return []; }
+}
+
 export async function buscarRedHat(dataInicio: string, dataFim: string) {
   try {
-    const url = \`https://access.redhat.com/hydra/rest/securitydata/cve.json?after=\${dataInicio}&before=\${dataFim}&severity=critical,important\`;
+    const url = `https://access.redhat.com/hydra/rest/securitydata/cve.json?after=${dataInicio}&before=${dataFim}&severity=critical,important`;
     const { data } = await axios.get(url, { timeout: 15000 });
     return data.map((v: any) => ({
       id: v.CVE,
@@ -60,9 +90,11 @@ export async function executarVarredura(alvos: string[]) {
       resultados.push(...rhData);
     } else {
       const cisa = await buscarCisaKev(alvo);
-      resultados.push(...cisa);
+      const osv = await buscarOsvDev(alvo);
+      const circl = await buscarCircl(alvo);
+      resultados.push(...cisa, ...osv, ...circl);
     }
-    await delay(1000); // Previne rate limit das APIs (mesma lógica do seu Python)
+    await delay(1000);
   }
   return resultados;
 }
