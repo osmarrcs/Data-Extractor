@@ -1,18 +1,12 @@
 import app from "./app";
-import { logger } from "./lib/logger";
 
-const rawPort = process.env["PORT"];
-
-if (!rawPort) {
-  throw new Error(
-    "PORT environment variable is required but was not provided.",
-  );
-}
-
+const rawPort = process.env["PORT"] || "10000";
 const port = Number(rawPort);
 
 if (Number.isNaN(port) || port <= 0) {
   throw new Error(`Invalid PORT value: "${rawPort}"`);
 }
 
-app.listen(Number(process.env.PORT || 10000), '0.0.0.0', () => { console.log('API rodando em 0.0.0.0'); });
+app.listen(port, '0.0.0.0', () => {
+  console.log(`API rodando em 0.0.0.0:${port}`);
+});
